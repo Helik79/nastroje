@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instrument Tetris — 64px obrázky</title>
+  <style>
+    body { margin:0; font-family:sans-serif; background:#1e293b; color:white; display:flex; justify-content:center; align-items:center; height:100vh; }
+    #game { width:420px; position:relative; }
+    .header { display:flex; justify-content:space-between; margin-bottom:12px; }
+    .grid { position:relative; background:#334155; border-radius:8px; padding:12px; height:360px; overflow:hidden; }
+    .cell { border:1px solid #475569; width:calc(100%/3 - 4px); height:60px; box-sizing:border-box; float:left; margin:1px; }
+    .piece { position:absolute; transition:left 0.12s linear; width:calc(100%/3 - 8px); text-align:center; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px; pointer-events:none; }
+    .piece img { width:64px; height:64px; display:block; margin:0 auto 6px; object-fit:cover; }
+    .piece .name { font-size:12px; text-align:center; }
+    .bins { position:absolute; bottom:0; left:0; right:0; display:flex; }
+    .bin { flex:1; padding:4px; background:#475569; border-top-left-radius:6px; border-top-right-radius:6px; display:flex; justify-content:center; align-items:center; height:80px; border:1px solid #64748b; transition:background 0.2s; }
+    .bin.highlight { background:#2563eb; }
+    .controls { margin-top:12px; display:flex; justify-content:center; gap:8px; }
+    .controls button { padding:6px 12px; background:#334155; border:none; border-radius:4px; color:white; font-size:16px; cursor:pointer; }
+    .overlay { position:absolute; inset:0; background:rgba(0,0,0,0.6); display:flex; justify-content:center; align-items:center; flex-direction:column; border-radius:8px; }
+    .feedback { position:absolute; left:50%; transform:translateX(-50%); top:16px; padding:6px 12px; border-radius:6px; font-weight:bold; display:none; }
+    .correct { background:#16a34a; }
+    .wrong { background:#dc2626; }
+    .img-fallback { font-size:12px; color:#ddd; height:64px; display:flex; align-items:center; justify-content:center; }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <div class="header">
+      <h1>Instrument Tetris</h1>
+      <div>
+        <div id="score">Skóre: 0</div>
+        <div id="lives">Lives: 3</div>
+      </div>
+    </div>
+
+    <div class="grid" id="grid">
+      <div id="cells"></div>
+      <div class="bins">
+        <div class="bin">Dechové</div>
+        <div class="bin">Strunné</div>
+        <div class="bin">Bicí</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="left">←</button>
+      <button id="down">↓</button>
+      <button id="right">→</button>
+    </div>
+
+    <div id="overlay" class="overlay">
+      <p>Stiskni Start pro spuštění.<br>Šipky ← → pohyb, ↓ seskok.</p>
+      <button id="start">Start</button>
+    </div>
+
+    <div id="feedback" class="feedback"></div>
+  </div>
+
+<script>
+/*
+  Verze s 64px Wikimedia thumbnails.
+  Thumb URL pattern: original: .../commons/1/1b/Violin.JPG
+  Thumb: https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Violin.JPG/64px-Violin.JPG
+*/
+
+const INSTRUMENTS = [
+  // strunné (64px thumb verze)
+  { name:"Housle", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Violin.JPG/64px-Violin.JPG" },
+  { name:"Viola", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Viola_1.jpg/64px-Viola_1.jpg" },
+  { name:"Violoncello", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Cello_front_side.jpg/64px-Cello_front_side.jpg" },
+  { name:"Harfa", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/5/5d/Concert_harp.jpg/64px-Concert_harp.jpg" },
+  { name:"Kytara", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/Guitalele.jpg/64px-Guitalele.jpg" },
+  { name:"Kontrabas", type:"strunné", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Double_bass.jpg/64px-Double_bass.jpg" },
+
+  // dechové
+  { name:"Lesní roh", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/French_horn.jpg/64px-French_horn.jpg" },
+  { name:"Hoboj", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/Oboe.jpg/64px-Oboe.jpg" },
+  { name:"Fagot", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Bassoon.jpg/64px-Bassoon.jpg" },
+  { name:"Tuba", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Tuba.jpg/64px-Tuba.jpg" },
+  { name:"Příčná flétna", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Western_concert_flute.jpg/64px-Western_concert_flute.jpg" },
+  { name:"Klarinet", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Clarinet.jpg/64px-Clarinet.jpg" },
+  { name:"Pozoun", type:"dechové", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Trombone.jpg/64px-Trombone.jpg" },
+
+  // bicí
+  { name:"Buben", type:"bicí", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Snare_drum.jpg/64px-Snare_drum.jpg" },
+  { name:"Činely", type:"bicí", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Cymbals.jpg/64px-Cymbals.jpg" },
+  { name:"Triangl", type:"bicí", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Triangle_instrument.jpg/64px-Triangle_instrument.jpg" },
+  { name:"Tympány", type:"bicí", img:"https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Timpani.jpg/64px-Timpani.jpg" }
+];
+
+const BINS = ["dechové","strunné","bicí"];
+
+let piece = null;
+let row = 0;
+let col = 1;
+let running = false;
+let score = 0;
+let lives = 3;
+
+const cells = document.getElementById('cells');
+const feedback = document.getElementById('feedback');
+const overlay = document.getElementById('overlay');
+const scoreDiv = document.getElementById('score');
+const livesDiv = document.getElementById('lives');
+const binDivs = document.querySelectorAll('.bin');
+const grid = document.getElementById('grid');
+
+// Vytvoření mřížky
+for (let r=0; r<6; r++){
+  for (let c=0; c<3; c++){
+    const div = document.createElement('div');
+    div.className = 'cell';
+    cells.appendChild(div);
+  }
+}
+
+// Figura (pohyblivý kus)
+const pieceDiv = document.createElement('div');
+pieceDiv.className = 'piece';
+grid.appendChild(pieceDiv);
+
+// Preload obrázků (cache)
+const imageCache = {};
+function preloadImages(list){
+  list.forEach(ins=>{
+    const url = ins.img;
+    if(!url) return;
+    if(imageCache[url]) return;
+    const img = new Image();
+    imageCache[url] = { imgEl: img, loaded:false, error:false };
+    img.onload = () => imageCache[url].loaded = true;
+    img.onerror = () => imageCache[url].error = true;
+    img.src = url;
+  });
+}
+preloadImages(INSTRUMENTS);
+
+// Vybere nástroj (pouze při resetu)
+function generatePiece(){ return INSTRUMENTS[Math.floor(Math.random()*INSTRUMENTS.length)]; }
+
+// Reset — nový kus se vytvoří JEN zde (tedy během pádu se nemění)
+function resetPiece(){
+  piece = generatePiece();
+  row = 0;
+  col = 1;
+  updatePiece();
+  highlightBin();
+}
+
+// Aktualizace vizuální pozice a obrázku
+function updatePiece(){
+  pieceDiv.style.left = `calc(${col/3*100}% + 4px)`;
+  pieceDiv.style.top  = `calc(${row/6*100}% + 4px)`;
+  pieceDiv.innerHTML = '';
+
+  if(!piece) return;
+
+  const url = piece.img;
+  if (url && imageCache[url] && imageCache[url].loaded){
+    const img = imageCache[url].imgEl.cloneNode();
+    img.alt = piece.name;
+    img.width = 64; img.height = 64;
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'name';
+    nameDiv.textContent = piece.name;
+    pieceDiv.appendChild(img);
+    pieceDiv.appendChild(nameDiv);
+  } else if (url && imageCache[url] && imageCache[url].error){
+    const fb = document.createElement('div');
+    fb.className = 'img-fallback';
+    fb.textContent = piece.name;
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'name';
+    nameDiv.textContent = piece.name;
+    pieceDiv.appendChild(fb);
+    pieceDiv.appendChild(nameDiv);
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'img-fallback';
+    placeholder.textContent = piece.name;
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'name';
+    nameDiv.textContent = piece.name;
+    pieceDiv.appendChild(placeholder);
+    pieceDiv.appendChild(nameDiv);
+  }
+}
+
+// Zvýraznění vybrané přihrádky
+function highlightBin(){
+  binDivs.forEach((bin,i)=> bin.classList.toggle('highlight', i===col) );
+}
+
+// Ovládací funkce
+function move(dir){
+  col = Math.max(0, Math.min(2, col + dir));
+  updatePiece();
+}
+function drop(){
+  row = 6;
+  updatePiece();
+  evaluateDrop();
+}
+
+// Vyhodnocení po dopadu
+function evaluateDrop(){
+  const correct = (BINS[col] === piece.type);
+  if (correct){
+    score += 10;
+    feedback.textContent = `Správně! +10 bodů`;
+    feedback.className = 'feedback correct';
+  } else {
+    score = Math.max(0, score - 5);
+    lives--;
+    feedback.textContent = `Špatně! -5 bodů (${piece.name} není ${BINS[col]})`;
+    feedback.className = 'feedback wrong';
+  }
+  scoreDiv.textContent = `Skóre: ${score}`;
+  livesDiv.textContent = `Lives: ${lives}`;
+  feedback.style.display = 'block';
+
+  setTimeout(()=>{
+    feedback.style.display = 'none';
+    if (lives > 0) resetPiece(); // nový nástroj jen po vyhodnocení
+  }, 900);
+
+  if (lives <= 0){
+    running = false;
+    overlay.style.display = 'flex';
+    feedback.textContent = `Konec hry — skóre ${score}`;
+    feedback.style.display = 'block';
+  }
+}
+
+// Hlavní smyčka (časování pádu)
+let lastTime = 0;
+const fallSpeed = 1000; // ms mezi svislými kroky
+
+function gameLoop(timestamp){
+  if (!running) return;
+  if (!lastTime) lastTime = timestamp;
+  const delta = timestamp - lastTime;
+  if (delta > fallSpeed){
+    row += 1;
+    lastTime = timestamp;
+    if (row >= 6){
+      row = 6;
+      updatePiece();
+      evaluateDrop();
+      return;
+    }
+    updatePiece();
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+// Start hry
+function startGame(){
+  score = 0; lives = 3;
+  scoreDiv.textContent = `Skóre: ${score}`;
+  livesDiv.textContent = `Lives: ${lives}`;
+  overlay.style.display = 'none';
+  running = true;
+  resetPiece();        // zvolí nástroj ZDE a nebude se měnit během pádu
+  lastTime = 0;
+  requestAnimationFrame(gameLoop);
+}
+
+// Ovládání tlačítky a klávesnicí
+document.getElementById('start').onclick = startGame;
+document.getElementById('left').onclick  = ()=> move(-1);
+document.getElementById('right').onclick = ()=> move(1);
+document.getElementById('down').onclick  = drop;
+
+document.addEventListener('keydown', e=>{
+  if (!running) return;
+  if (e.key === 'ArrowLeft')  move(-1);
+  if (e.key === 'ArrowRight') move(1);
+  if (e.key === 'ArrowDown')  drop();
+});
+</script>
+</body>
+</html>
